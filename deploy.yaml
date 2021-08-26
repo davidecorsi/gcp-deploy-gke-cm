@@ -1,0 +1,126 @@
+#
+# A simple GKE spring-boot docker image.
+#
+# Install with
+#
+# $ kubectl apply -f deploy.yaml
+#
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: web-app-spring-data-pvc
+  labels:
+    app: spring-boot-data-json-cm
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-app-spring-data-config-map
+  labels:
+    app: spring-boot-data-json-cm
+data:
+  H2_CONSOLE_ENABLED: "true"
+  JPA_SHOW-SQL: "true"
+  JPA_PROPERTIES_HIBERNATE_FORMAT_SQL: "true"
+  H2_CONSOLE_PATH: /h2-console
+  VOLUME_PATH: /mnt/volume
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: web-app-spring-data-secret
+  labels:
+    app: spring-boot-data-json-cm
+type: Opaque
+data:
+  DATASOURCE_URL: amRiYzpoMjptZW06ZGI7REJfQ0xPU0VfREVMQVk9LTE=
+  DATASOURCE_USERNAME: c2E=
+  DATASOURCE_PASSWORD: c2E=
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spring-boot-data-json-cm
+  namespace: default
+  labels:
+    app: spring-boot-data-json-cm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spring-boot-data-json-cm
+  template:
+    metadata:
+      labels:
+        app: spring-boot-data-json-cm
+    spec:
+      containers:
+      - name: spring-boot-data-json-config-map
+        image: gcr.io/neat-responder-323913/spring-boot-data-json-cm:latest
+        ports:
+        - containerPort: 8080
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8080
+          initialDelaySeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8080
+          timeoutSeconds: 5
+        env:
+        - name: DATASOURCE_URL
+          valueFrom:
+            secretKeyRef:
+              name: web-app-spring-data-secret
+              key: DATASOURCE_URL
+        - name: DATASOURCE_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: web-app-spring-data-secret
+              key: DATASOURCE_USERNAME
+        - name: DATASOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: web-app-spring-data-secret
+              key: DATASOURCE_PASSWORD
+        volumeMounts:
+          - name: api-volume
+            mountPath: "/mnt/volume"
+        envFrom:
+          - configMapRef:
+              name: web-app-spring-data-config-map
+      volumes:
+      - name: api-volume
+        persistentVolumeClaim:
+          claimName: web-app-spring-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    cloud.google.com/neg: '{"ingress":true}'
+  finalizers:
+  - service.kubernetes.io/load-balancer-cleanup
+  labels:
+    app: spring-boot-data-json-cm
+  name: spring-boot-data-json-cm-service
+  namespace: default
+spec:
+  externalTrafficPolicy: Cluster
+  ports:
+  - port: 80
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    app: spring-boot-data-json-cm
+  sessionAffinity: None
+  type: LoadBalancer
+
